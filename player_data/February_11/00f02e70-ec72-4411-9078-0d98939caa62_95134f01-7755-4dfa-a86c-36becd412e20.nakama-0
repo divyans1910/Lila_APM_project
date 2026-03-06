@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LILA BLACK | Journey Visualizer Mockup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* This represents the Lockdown_Minimap.jpg you uploaded */
+        .map-canvas {
+            background-image: url('https://i.ibb.co/v4m0n9P/Lockdown-Minimap.jpg'); 
+            background-size: contain;
+            background-repeat: no-repeat;
+            width: 800px; /* Scaled for display, but logic uses 1024px */
+            height: 800px;
+            position: relative;
+            border: 4px solid #1a1a1a;
+        }
+
+        /* Marker Types from README */
+        .marker { position: absolute; transform: translate(-50%, -50%); cursor: pointer; }
+        .player-human { width: 10px; height: 10px; background: #00f2ff; border-radius: 50%; box-shadow: 0 0 8px #00f2ff; }
+        .player-bot { width: 8px; height: 8px; background: #94a3b8; border-radius: 50%; border: 1px solid white; }
+        .event-kill { font-size: 20px; z-index: 10; }
+        .event-loot { font-size: 16px; color: #fbbf24; }
+        .event-storm { font-size: 20px; filter: drop-shadow(0 0 5px red); }
+
+        /* Tooltip on hover */
+        .marker:hover::after {
+            content: attr(data-label);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            white-space: nowrap;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body class="bg-[#0b0c10] text-slate-300 font-sans h-screen flex flex-col overflow-hidden">
+
+    <header class="h-16 border-b border-white/10 flex items-center justify-between px-8 bg-[#1f2833]">
+        <div class="flex items-center gap-4">
+            <h1 class="text-xl font-bold text-cyan-400 tracking-tighter italic">LILA BLACK // <span class="text-white">LEVEL DESIGN TOOL</span></h1>
+        </div>
+        <div class="flex gap-4 items-center">
+            <span class="text-xs font-mono text-slate-500">MAP: Lockdown</span>
+            <div class="h-4 w-px bg-white/20"></div>
+            <select class="bg-black text-xs border border-white/20 rounded p-1 outline-none">
+                <option>Match: b71aaad8 (1243 Total Files)</option>
+            </select>
+        </div>
+    </header>
+
+    <div class="flex flex-1">
+        <aside class="w-72 bg-[#1f2833] border-r border-white/10 p-6 flex flex-col gap-8">
+            <section>
+                <h3 class="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-500 mb-4">Display Layers</h3>
+                <div class="space-y-3 text-sm">
+                    <label class="flex items-center gap-3"><input type="checkbox" checked class="accent-cyan-500"> Human Journeys</label>
+                    <label class="flex items-center gap-3"><input type="checkbox" checked class="accent-slate-400"> Bot Movements</label>
+                    <label class="flex items-center gap-3"><input type="checkbox" checked class="accent-yellow-500"> Loot Drops</label>
+                    <label class="flex items-center gap-3"><input type="checkbox" checked class="accent-red-500"> Kill Zones (Heatmap)</label>
+                </div>
+            </section>
+
+            <section class="bg-black/30 p-4 rounded-lg border border-white/5">
+                <h3 class="text-[10px] font-black uppercase text-slate-500 mb-2">Legend</h3>
+                <div class="grid grid-cols-2 gap-2 text-[10px]">
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 bg-cyan-400 rounded-full"></div> Human</div>
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 bg-slate-400 rounded-full"></div> Bot</div>
+                    <div class="flex items-center gap-2"><span>??</span> Kill</div>
+                    <div class="flex items-center gap-2"><span>??</span> Loot</div>
+                    <div class="flex items-center gap-2"><span>?</span> Storm Death</div>
+                </div>
+            </section>
+
+            <div class="mt-auto">
+                <p class="text-[10px] text-slate-500 italic leading-tight">
+                    "Level Designers: Use this to track if the Lockdown map's central bridge is a choke point."
+                </p>
+            </div>
+        </aside>
+
+        <main class="flex-1 bg-black flex flex-col items-center justify-center p-4 relative">
+            <div class="map-canvas">
+                <div class="marker player-human" style="top: 50%; left: 52%;" data-label="Human: f4e072fa"></div>
+                
+                <div class="marker player-bot" style="top: 30%; left: 40%;" data-label="Bot: 1440"></div>
+
+                <div class="marker event-kill" style="top: 45%; left: 48%;" data-label="Event: Kill (Match Time 05:22)">??</div>
+
+                <div class="marker event-loot" style="top: 25%; left: 75%;" data-label="Event: Loot (Sniper)">??</div>
+
+                <div class="marker event-storm" style="top: 85%; left: 20%;" data-label="Event: KilledByStorm">?</div>
+            </div>
+
+            <div class="absolute bottom-8 w-3/4 bg-[#1f2833]/90 backdrop-blur p-4 rounded-2xl border border-white/10 flex items-center gap-6 shadow-2xl">
+                <button class="bg-cyan-500 text-black font-bold p-2 rounded-full hover:bg-cyan-400 transition">??</button>
+                <div class="flex-1 flex flex-col gap-1">
+                    <div class="flex justify-between text-[10px] font-mono text-cyan-500 uppercase">
+                        <span>00:00</span>
+                        <span>08:45 / 15:00</span>
+                    </div>
+                    <input type="range" class="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+                </div>
+                <div class="text-xs font-mono bg-black/50 px-3 py-1 rounded">2.0x SPEED</div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
