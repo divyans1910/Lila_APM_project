@@ -74,11 +74,8 @@ def load_combined_data(paths, target_map):
             df['dt'] = df['ts']
         else:
             ts_val = df['ts'].iloc[0]
-            if isinstance(ts_val, (int, float)):
-                unit = 's' if df['ts'].max() < 1e12 else 'ns'
-                df['dt'] = pd.to_datetime(df['ts'], unit=unit)
-            else:
-                df['dt'] = pd.to_datetime(df['ts'])
+            unit = 's' if df['ts'].max() < 1e12 else 'ns'
+            df['dt'] = pd.to_datetime(df['ts'], unit=unit)
 
         df['rel_sec'] = (df['dt'] - df['dt'].min()).dt.total_seconds()
         df['callsign'] = f"{str(df['user_id'].iloc[0]).strip()[:8]}"
@@ -95,11 +92,27 @@ def load_combined_data(paths, target_map):
 with st.sidebar:
     st.markdown("<h1 style='color:#00FF41; margin-bottom:0;'>LILA BLACK</h1>", unsafe_allow_html=True)
     lib_df = get_session_library()
+    
     with st.expander("📂 SESSION SETUP", expanded=True):
         valid_dates = sorted(lib_df['date'].dropna().unique())
-        sel_date = st.date_input("PLAYTEST DATE", value=max(valid_dates) if valid_dates else datetime.now().date())
+        
+        if valid_dates:
+            # Calendar UI with auto-fading for non-playtest dates
+            sel_date = st.date_input(
+                "PLAYTEST DATE", 
+                value=max(valid_dates),
+                min_value=min(valid_dates),
+                max_value=max(valid_dates)
+            )
+        else:
+            st.error("NO PLAYTEST DATA DETECTED")
+            st.stop()
+
         date_context = lib_df[lib_df['date'] == sel_date]
-        if date_context.empty: st.stop()
+        if date_context.empty: 
+            st.warning("Selected date has no recorded telemetry.")
+            st.stop()
+            
         target_map = st.selectbox("OPERATIONAL AREA", sorted(date_context['map'].unique()))
     
     with st.expander("👥 ENTITY SELECTOR", expanded=True):
@@ -116,9 +129,7 @@ with st.sidebar:
 
     with st.expander("🔥 TACTICAL OVERLAY", expanded=True):
         show_heatmap = st.checkbox("ENABLE HEATMAP", value=False)
-        # Split options to distinguish between types
-        heatmap_mode = st.radio("ANALYSIS TARGET", 
-                                ["High-Traffic (Movement)", "Kill Zones (Attack)", "Death Zones (Fatalities)"]) if show_heatmap else None
+        heatmap_mode = st.radio("ANALYSIS TARGET", ["High-Traffic (Movement)", "Kill Zones (Attack)", "Death Zones (Fatalities)"]) if show_heatmap else None
 
 # --- 5. MAIN INTERFACE ---
 if not all_selected:
@@ -159,7 +170,6 @@ else:
         if os.path.exists(img_p):
             fig.add_layout_image(dict(source=Image.open(img_p), xref="x", yref="y", x=0, y=0, sizex=1024, sizey=1024, sizing="stretch", layer="below"))
 
-        # --- ENHANCED INDEPENDENT HEATMAP LOGIC ---
         if show_heatmap and not v_df.empty:
             if "Kill Zones" in heatmap_mode:
                 h_data = v_df[v_df['event'].str.contains('Kill', case=False, na=False)]
