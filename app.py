@@ -73,7 +73,6 @@ def load_combined_data(paths, target_map):
         if pd.api.types.is_datetime64_any_dtype(df['ts']):
             df['dt'] = df['ts']
         else:
-            ts_val = df['ts'].iloc[0]
             unit = 's' if df['ts'].max() < 1e12 else 'ns'
             df['dt'] = pd.to_datetime(df['ts'], unit=unit)
 
@@ -95,24 +94,13 @@ with st.sidebar:
     
     with st.expander("📂 SESSION SETUP", expanded=True):
         valid_dates = sorted(lib_df['date'].dropna().unique())
-        
         if valid_dates:
-            # Calendar UI with auto-fading for non-playtest dates
-            sel_date = st.date_input(
-                "PLAYTEST DATE", 
-                value=max(valid_dates),
-                min_value=min(valid_dates),
-                max_value=max(valid_dates)
-            )
+            sel_date = st.date_input("PLAYTEST DATE", value=max(valid_dates), min_value=min(valid_dates), max_value=max(valid_dates))
         else:
-            st.error("NO PLAYTEST DATA DETECTED")
-            st.stop()
+            st.error("NO PLAYTEST DATA DETECTED"); st.stop()
 
         date_context = lib_df[lib_df['date'] == sel_date]
-        if date_context.empty: 
-            st.warning("Selected date has no recorded telemetry.")
-            st.stop()
-            
+        if date_context.empty: st.warning("Selected date has no recorded telemetry."); st.stop()
         target_map = st.selectbox("OPERATIONAL AREA", sorted(date_context['map'].unique()))
     
     with st.expander("👥 ENTITY SELECTOR", expanded=True):
@@ -138,18 +126,34 @@ else:
     df, active_map = load_combined_data(all_selected, target_map)
     t_max = float(df['rel_sec'].max()) if not df.empty else 0.0
 
+    # 1. Initialize State
     if 'global_playhead' not in st.session_state:
         st.session_state.global_playhead = t_max
 
+    # 2. PRE-PROCESS JUMP LOGIC
+    jump_events = df[df['event'].str.contains('Kill|Death|Storm|Eliminated|Combat', case=False, na=False)].sort_values('rel_sec')
+    jump_map = {}
+    for i, r in jump_events.iterrows():
+        unique_label = f"{r['event']} - {r['callsign']} (@ {int(r['rel_sec'])}s) [#{i}]"
+        jump_map[unique_label] = float(r['rel_sec'])
+
+    # 3. CALLBACK FUNCTION
+    def handle_jump():
+        selection = st.session_state.jump_trigger
+        if selection in jump_map:
+            st.session_state.global_playhead = jump_map[selection]
+
+    # 5. METRICS DISPLAY
     with st.expander("📊 OPERATIONAL METRICS", expanded=True):
         m1, m2, m3, m4 = st.columns(4)
         metrics = [("Entities", len(df["callsign"].unique())), 
-                   ("Kills", len(df[df["event"].str.contains("Kill", case=False)])),
+                   ("Kills", len(df[df["event"].str.contains("Kill|Eliminated", case=False)])),
                    ("Deaths", len(df[df["event"].str.contains("Death|Storm", case=False)])),
                    ("Loot", len(df[df["event"].str.contains("Loot", case=False)]))]
         for col, (l, v) in zip([m1, m2, m3, m4], metrics):
             col.markdown(f'<div class="metric-card"><div class="metric-label">{l}</div><div class="metric-value">{v}</div></div>', unsafe_allow_html=True)
 
+    # 6. TIMELINE SLIDER
     st.slider("🎞️ TIMELINE CONTROL", 0.0, t_max, key="global_playhead")
     v_df = df[df['rel_sec'] <= st.session_state.global_playhead].copy()
 
@@ -162,9 +166,21 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
+    # 7. MAP AND DATA LOGS
     col_map, col_log = st.columns([2.3, 1])
     
     with col_map:
+        # --- QUICK JUMP SHIFTED HERE (NEXT TO MAP) ---
+        if not jump_events.empty:
+            st.markdown("<p style='color:#00FF41; font-size:0.75rem; font-weight:bold; margin-bottom:5px; margin-top: -10px;'>// QUICK JUMP TO ACTION</p>", unsafe_allow_html=True)
+            st.selectbox(
+                "Jump to Event", 
+                options=["--- Select Event ---"] + list(jump_map.keys()), 
+                label_visibility="collapsed", 
+                key="jump_trigger",
+                on_change=handle_jump
+            )
+        
         fig = go.Figure()
         img_p = os.path.join("player_data", "minimaps", MAP_CONFIG[active_map]['img'])
         if os.path.exists(img_p):
@@ -172,21 +188,14 @@ else:
 
         if show_heatmap and not v_df.empty:
             if "Kill Zones" in heatmap_mode:
-                h_data = v_df[v_df['event'].str.contains('Kill', case=False, na=False)]
-                colors = 'Reds'
+                h_data = v_df[v_df['event'].str.contains('Kill|Eliminated', case=False, na=False)]; colors = 'Reds'
             elif "Death Zones" in heatmap_mode:
-                h_data = v_df[v_df['event'].str.contains('Death|Storm', case=False, na=False)]
-                colors = 'Purples'
-            else: # Movement
-                h_data = v_df[v_df['event'].str.contains('Position', case=False, na=False)]
-                colors = 'Greens'
+                h_data = v_df[v_df['event'].str.contains('Death|Storm', case=False, na=False)]; colors = 'Purples'
+            else:
+                h_data = v_df[v_df['event'].str.contains('Position', case=False, na=False)]; colors = 'Greens'
             
             if not h_data.empty:
-                fig.add_trace(go.Histogram2dContour(
-                    x=h_data['px_x'], y=h_data['px_y'],
-                    colorscale=colors, ncontours=40, line_width=0, 
-                    opacity=0.6, showlegend=False, hoverinfo='skip'
-                ))
+                fig.add_trace(go.Histogram2dContour(x=h_data['px_x'], y=h_data['px_y'], colorscale=colors, ncontours=40, line_width=0, opacity=0.6, showlegend=False, hoverinfo='skip'))
 
         for cs in v_df['callsign'].unique():
             p_data = v_df[v_df['callsign'] == cs]
@@ -196,25 +205,15 @@ else:
             evs = p_data[~p_data['event'].str.contains('Position', case=False)]
             for _, row in evs.iterrows():
                 e = str(row['event']).lower()
-                mark = EMOJI_STORM if "storm" in e else EMOJI_KILL if "kill" in e else EMOJI_DEATH if "death" in e else EMOJI_LOOT if "loot" in e else None
+                mark = EMOJI_STORM if "storm" in e else EMOJI_KILL if any(x in e for x in ["kill", "eliminated"]) else EMOJI_DEATH if "death" in e else EMOJI_LOOT if "loot" in e else None
                 if mark:
                     fig.add_trace(go.Scatter(x=[row['px_x']], y=[row['px_y']], mode='text', text=[mark], textfont=dict(size=24), name=f"{cs}: {row['event']}", hoverinfo='name'))
 
-        fig.update_layout(width=900, height=800, template="plotly_dark", margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
+        fig.update_layout(width=900, height=800, template="plotly_dark", margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False, dragmode='pan')
         fig.update_xaxes(range=[0, 1024], visible=False); fig.update_yaxes(range=[1024, 0], visible=False)
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'displaylogo': False})
 
     with col_log:
-        st.markdown("<p style='color:#00FF41; font-size:0.75rem; font-weight:bold;'>// JUMP TO CRITICAL EVENT</p>", unsafe_allow_html=True)
-        jump_events = df[df['event'].str.contains('Kill|Death|Storm', case=False, na=False)].sort_values('rel_sec')
-        if not jump_events.empty:
-            jump_events['label'] = jump_events.apply(lambda r: f"{r['event']} - {r['callsign']} (@ {int(r['rel_sec'])}s)", axis=1)
-            selected_label = st.selectbox("Select event", options=["--- Select Target ---"] + list(jump_events['label']), label_visibility="collapsed")
-            if selected_label != "--- Select Target ---":
-                new_ts = jump_events[jump_events['label'] == selected_label]['rel_sec'].iloc[0]
-                st.session_state.global_playhead = float(new_ts)
-                st.rerun()
-
         st.markdown("<br><p style='color:#666; font-size:0.7rem; letter-spacing:2px;'>// INTELLIGENCE FEED</p>", unsafe_allow_html=True)
         log_df = v_df[~v_df['event'].str.contains('Position', case=False)].sort_values('dt', ascending=False)
-        st.dataframe(log_df[['dt', 'event', 'callsign']], hide_index=True, use_container_width=True, height=650)
+        st.dataframe(log_df[['dt', 'event', 'callsign']], hide_index=True, use_container_width=True, height=750)
